@@ -36,7 +36,7 @@ class VPrincipal:
 
         # Ajustar las coordenadas para colocar el rectángulo en el borde izquierdo
         # 387AB2
-        portafolio_l = tk.Label(frame, text="FACTURAS DIVAR", bg='#387AB2', fg="white",
+        portafolio_l = tk.Label(frame, text="FACTURAS", bg='#387AB2', fg="white",
                                 font=("Comic Sans MS", 10))
         portafolio_l.place(x=30, y=5)
 
