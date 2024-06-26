@@ -1,4 +1,12 @@
+"""
+El presente código “VPrincipal.py” fue elaborado por el pasante de Ingeniería en Sistemas Computacionales (ISC)
+Juan Carlos Garcia Jimenez (juancarlosgarciajimenez123@gmail.com) para la empresa
+Distribución e Ingeniería VAR S.A. de C.V en los años 2023-2024.
+"""
+
 import tkinter as tk
+import ToolTip as Toip
+import hashlib
 from tkinter import ttk
 from tkinter import filedialog
 from ttkwidgets.autocomplete import AutocompleteCombobox
@@ -15,20 +23,23 @@ class VPrincipal:
         self._anio_actual = "0000"
         self._tabla_actual = "FACTURAS"
         self._anios = self._worm.consulta_sql_obtner_anios(self._tabla_actual)
+        self._anios_frames = {}
         self._root = groot
         self._root.protocol("WM_DELETE_WINDOW", self.abortar)
         self._root.iconbitmap('sources/divar.ico')
-        # self._divar_icon = tk.PhotoImage('sources/divar.png')
-        # self._root.iconphoto(True, self._divar_icon)
         self._root.title("SISTEMA FACTURAS INDICE GENERAL")
         self._root.geometry("1300x600")
         self._root.resizable(False, False)
         self._columnas_ocultas = []
         self._top_levels_activos = []
-
+        self._search_level = 1
         self._imagen = tk.PhotoImage(file="sources/warning.png")
         self._imagen_correct = tk.PhotoImage(file="sources/correct.png")
         self._imagen_fp = tk.PhotoImage(file="sources/first_p.png")
+        self._imagen_add = tk.PhotoImage(file="sources/add.png")
+        self._imagen_del = tk.PhotoImage(file="sources/del.png")
+
+        self._widget_collection = list()
 
         # PARTE IZQUIERDA DE LA PANTALLA; OPERACIONES Y SELECCION POR AÑO:
 
@@ -36,7 +47,7 @@ class VPrincipal:
 
         # Ajustar las coordenadas para colocar el rectángulo en el borde izquierdo
         # 387AB2
-        portafolio_l = tk.Label(frame, text="FACTURAS", bg='#387AB2', fg="white",
+        portafolio_l = tk.Label(frame, text="FACTURAS DIVAR", bg='#387AB2', fg="white",
                                 font=("Comic Sans MS", 10))
         portafolio_l.place(x=30, y=5)
 
@@ -84,27 +95,17 @@ class VPrincipal:
         frame_dos = tk.Frame(groot, bd=0, relief=tk.RAISED, width=1280, height=600, bg="white")
         frame_dos.place(x=187, y=0)
 
+        # self._frame_search = tk.Frame(frame_dos, bd=0, relief=tk.RAISED, width=1097, height=20, bg="red")
+        self._frame_search = tk.Frame(frame_dos, bd=0, relief=tk.RAISED, width=1050, height=20, bg="white")
+
         self._titulo_tabla = tk.Label(frame_dos, text="FACTURAS   INDICE   GENERAL", bg='#387AB2', fg="white",
                                       font=("Comic Sans MS", 10))
         self._titulo_tabla.place(relx=0.5, y=8, anchor='center')
 
         self._anio_tabla = tk.Label(frame_dos, text="0000", bg='#387AB2', fg="white", font=("Comic Sans MS", 10))
 
-        busqueda_label = tk.Label(frame_dos, text="BUSQUEDA DE ", bg='#DCDAD5')
-        busqueda_label.place(x=5, y=20)
-        campo_busqueda = tk.Entry(frame_dos, bg='#DCDAD5', width=24)
-        combo = ttk.Combobox(frame_dos, values=['NOMBRE XML', 'RFC', 'PROOVEDOR', 'REGIMEN FISCAL', 'FOLIO', 'SERIE',
-                                                'FORMA DE PAGO', 'TIPO DE COMPRO.', 'METODO DE PAGO', 'FECHA',
-                                                'SUBTOTAL', 'IMPUESTOS', 'TOTAL', 'TRANSFERENCIA', 'NO. DE CLIENTE',
-                                                'RECIBIO_DIVAR', 'CATEGORIA', 'CONCEPTO', 'NO.COTIZACION', 'CARPETA'],
-                             state="readonly")
-        combo.set('PROOVEDOR')
-        combo.place(x=261, y=20)
-        campo_busqueda.bind("<KeyRelease>", lambda event: self.search_registers(campo_busqueda.get().upper(),
-                                                                                combo.get()))
-        campo_busqueda.place(x=90, y=21)
-        seleccion_label = tk.Label(frame_dos, text="EN ", bg='#DCDAD5')
-        seleccion_label.place(x=237, y=20)
+        self.search_section_update()
+        self._frame_search.place(x=52, y=20)
 
         self.frame_botones_tabla = tk.Frame(frame_dos, bg='white', bd=0, relief=tk.RAISED, width=1100, height=46)
 
@@ -112,8 +113,24 @@ class VPrincipal:
                                       height=17, width=17)
         no_pagadas_button.place(x=99, y=63)
 
+        Toip.create_tooltip(no_pagadas_button, "Facturas no pagadas")
+
         inc_button = tk.Button(frame_dos, image=self._imagen, command=self.act_mostrar_faltantes, height=17, width=17)
         inc_button.place(x=122, y=63)
+
+        Toip.create_tooltip(inc_button, "Facturas incompletas")
+
+        add_button = tk.Button(frame_dos, image=self._imagen_add, command=self.increase_search_level,
+                               height=15, width=17)
+        add_button.place(x=5, y=19)
+
+        Toip.create_tooltip(add_button, "Añadir filtro")
+
+        del_button = tk.Button(frame_dos, image=self._imagen_del, command=lambda: self.decrease_search_level(),
+                               height=15, width=17)
+        del_button.place(x=28, y=19)
+
+        Toip.create_tooltip(del_button, "Eliminar filtro")
 
         self.actualizar_bottones()
         self.frame_botones_tabla.place(x=5, y=40)
@@ -125,6 +142,12 @@ class VPrincipal:
         self.frame_t.place(x=5, y=88)
 
     # METODOS PARA EL FRAME DE CAMBIO DE TABLA (INDICE-NUEVAS)
+
+    # El método “abrir_archivo” controla la adición de facturas mediante el archivo comprimido en formato .zip dado
+    # por el SAT; hace uso de los métodos definidos en la clase “BookWorm” para la descompresión del archivo, la
+    # adición de los datos de los archivos a la base de datos y la consulta de la tabla de facturas. Además, se encarga
+    # de tabular una vez que se han incluido las facturas y actualiza los años disponibles para su búsqueda mediante
+    # la sección de botones.
     def abrir_archivo(self):
         # Abre el cuadro de diálogo de selección de archivo
         archivo = filedialog.askopenfilename(title="Selecciona un archivo",
@@ -136,6 +159,9 @@ class VPrincipal:
         self.tabular()
         self.actualizar_anios()
 
+    # El método “switch_to_index” se encarga de cambiar la consulta actual hacia la tabla de FACTURAS; básicamente
+    # cambia el contexto del programa para trabajar con la tabla de FACTURAS y actualiza la interfaz para mostrar
+    # los datos de dicha tabla.
     def switch_to_index(self):
         self._tabla_actual = "FACTURAS"
         self._consulta_actual = self._worm.consulta_sql_completa("FACTURAS")
@@ -146,6 +172,9 @@ class VPrincipal:
         self.actualiza_button_switch("FACTURAS NUEVAS")
         self.actualizar_anios()
 
+    # El método “switch_to_new” se encarga de cambiar la consulta actual hacia la tabla de FACTURAS_NUEVAS; básicamente
+    # cambia el contexto del programa para trabajar con la tabla de FACTURAS_NUEVAS y actualiza la interfaz para mostrar
+    # los datos de dicha tabla.
     def switch_to_new(self):
         self._tabla_actual = "FACTURAS_NUEVAS"
         self._consulta_actual = self._worm.consulta_sql_completa("FACTURAS_NUEVAS")
@@ -155,6 +184,74 @@ class VPrincipal:
         self.tabular()
         self.actualiza_button_switch("INDICE GENERAL")
         self.actualizar_anios()
+
+    # Los métodos “increase_search_level” y “decrease_search_level” se encargan de
+    # aumentar y disminuir (respectivamente) el criterio que determina el número de campos que se implementará
+    # en las búsquedas de registros; esto es los cuadros de búsqueda. Siendo cero el mínimo y el máximo de tres
+    # cuadros de búsqueda (filtros).
+    def increase_search_level(self):
+        if self._search_level < 3:
+            self._search_level = self._search_level + 1
+            self.search_section_update()
+
+    def decrease_search_level(self):
+        if self._search_level > 0:
+            self._search_level = self._search_level - 1
+            self.search_section_update()
+
+    # 
+    def search_section_update(self):
+
+        for widget in self._frame_search.winfo_children():
+            widget.destroy()
+
+        self._widget_collection = list()
+
+        cox = [0, 90, 195, 220]
+        inc = [85, 105, 25, 122]
+
+        # range(0, self._search_level)
+        for x in range(0, self._search_level):
+            print("X:", x)
+            # Se almacena en widget label de busqueda, campo de busqueda, combo, seleccion label, coordenadas
+            widget = list()
+
+            if x != 0:
+                cox[0] = cox[3] + inc[3]
+                cox[1] = cox[0] + inc[0]
+                cox[2] = cox[1] + inc[1]
+                cox[3] = cox[2] + inc[2]
+            else:
+                cox = [0, 90, 195, 220]
+
+            busqueda_label = tk.Label(self._frame_search, text="BUSQUEDA DE ", bg='#DCDAD5')
+            campo_busqueda = tk.Entry(self._frame_search, bg='#DCDAD5', width=17)
+            seleccion_label = tk.Label(self._frame_search, text="EN ", bg='#DCDAD5')
+            combo = ttk.Combobox(self._frame_search, values=['NOMBRE XML', 'RFC', 'PROOVEDOR', 'REGIMEN FISCAL',
+                                                             'FOLIO', 'SERIE', 'FORMA DE PAGO', 'TIPO DE COMPRO.',
+                                                             'METODO DE PAGO', 'FECHA', 'SUBTOTAL', 'IMPUESTOS',
+                                                             'TOTAL', 'TRANSFERENCIA', 'NO. DE CLIENTE',
+                                                             'RECIBIO_DIVAR', 'CATEGORIA', 'CONCEPTO',
+                                                             'NO.COTIZACION', 'CARPETA'],
+                                 state="readonly", width=17)
+            combo.set('PROOVEDOR')
+
+            campo_busqueda.bind("<KeyRelease>", lambda event: self.search_registers(campo_busqueda.get().upper(),
+                                                                                    combo.get()))
+
+            widget.append(busqueda_label)
+            widget.append(campo_busqueda)
+            widget.append(seleccion_label)
+            widget.append(combo)
+            widget.append([cox[0], cox[1], cox[2], cox[3]])
+            self._widget_collection.append(widget)
+
+        for widget_item in self._widget_collection:
+            print("Entre")
+            widget_item[0].place(x=widget_item[4][0], y=0)
+            widget_item[1].place(x=widget_item[4][1], y=0)
+            widget_item[2].place(x=widget_item[4][2], y=0)
+            widget_item[3].place(x=widget_item[4][3], y=0)
 
     def actualiza_button_switch(self, nombre):
 
@@ -184,11 +281,17 @@ class VPrincipal:
 
     # METODOS DE LA TABLA, RELATIVOS A ELLA Y DEL SWITCH.
 
+    # El método “tabular” se encarga de mostrar en pantalla las consultas SQL que se realicen
+    # a la base de datos, dentro del método se definen los Scrollbar para la visualización completa
+    # de la consulta y se asigna a cada registro los eventos para desplegar el menú contextual para las
+    # distintas opciones para cada registro.
     def tabular(self):
 
         # Eliminar los widgets anteriores dentro del scroll de la tabla
         for widget in self.frame_t.winfo_children():
             widget.destroy()
+            del widget
+        self.frame_t.winfo_children().clear()
 
         scrollbar_v = tk.Scrollbar(self.frame_t, orient='vertical', width=15)
         scrollbar_v.place(x=0, y=0, height=500)
@@ -225,12 +328,18 @@ class VPrincipal:
                 tree.column(tupla[0], width=0, stretch=False)
 
         for registro in self._consulta_actual:
+
+            tag = "white"
+            # tag = self.get_color(registro[10])
+            # print(tag)
             tree.insert("", "end", text=registro[0], values=(registro[8], registro[1], registro[7],
                                                              registro[2], registro[3], registro[11], registro[10],
                                                              registro[12], registro[4][8:10] + '-' + registro[4][5:7] +
                                                              '-' + registro[4][0:4], registro[6], registro[9],
                                                              registro[5], registro[13], registro[15], registro[16],
-                                                             registro[14], registro[17], registro[18]))
+                                                             registro[14], registro[17], registro[18]), tags=("cl"))
+
+            tree.tag_configure("cl", background=tag)
 
         scrollbar_v.config(command=tree.yview)
         scrollbar_h.config(command=tree.xview)
@@ -243,7 +352,35 @@ class VPrincipal:
         tree.place(x=0, y=0, width=1085)
         table_frame.place(x=15, y=15)
 
+    # Destinado a determinar un color para los registros del TView de acuerdo con el
+    # tipo de factura; no se ha implementado
+    def get_color(self, tipo_factura):
+        if tipo_factura == 'P':
+            bg_color = "green"
+        elif tipo_factura == 'I':
+            bg_color = "blue"
+        elif tipo_factura == 'E':
+            bg_color = "yellow"
+        elif tipo_factura == 'T':
+            bg_color = "pink"
+        elif tipo_factura == 'N':
+            bg_color = "orange"
+        else:
+            bg_color = "white"
+        return bg_color
+
+    # Encargado de la busqueda de los Entry de las consulatas; uno de ellos usa pandas a manera de subconsulta
     def search_registers(self, criterio, columna):
+
+        date_flag = False
+        concept_flag = False
+        date_criteria = list()
+        concept_criteria = list()
+        consulta_tab = list()
+
+        condiciones = list()
+        for widget_set in self._widget_collection:
+            condiciones.append([widget_set[3].get(), widget_set[1].get()])
 
         claves = [('NOMBRE XML', 'NOMBRE_XML'), ('RFC', 'RFC'), ('PROOVEDOR', 'NOMBRE'),
                   ('REGIMEN FISCAL', 'REGIMEN_FISCAL'), ('FOLIO', 'FOLIO'), ('SERIE', 'SERIE'),
@@ -253,46 +390,70 @@ class VPrincipal:
                   ('NO. DE CLIENTE', 'NUMERO_CLIENTE'), ('RECIBIO_DIVAR', 'RECIBIO_DIVAR'),
                   ('CATEGORIA', 'CATEGORIA_FACTURA'), ('NO_COTIZACION', 'NO.COTIZACION'), ('CARPETA', 'CARPETA')]
 
-        columna_sql = 'NOMBRE'
-
-        if columna == "FECHA":
-            if self._tabla_actual == "FACTURAS":
-                self._consulta_actual = self._worm.consulta_sql_rango_fecha("FACTURAS", criterio, self._anio_actual)
-                # print(self._consulta_actual)
-            else:
-                self._consulta_actual = self._worm.consulta_sql_rango_fecha("FACTURAS_NUEVAS", criterio,
-                                                                            self._anio_actual)
-            self.tabular()
-            return
-
-        if columna == "CONCEPTO":
-            if self._tabla_actual == "FACTURAS":
-                self._consulta_actual = self._worm.consulta_sql_concepto("FACTURAS", "CONCEPTOS", criterio)
-            else:
-                self._consulta_actual = self._worm.consulta_sql_concepto("FACTURAS_NUEVAS", "CONCEPTOS_NUEVOS",
-                                                                         criterio)
-
-            # self._consulta_actual = self._worm._cursor.execute(consulta, ['%' + criterio + '%'])
-            self.tabular()
-            return
+        columnas = ['NOMBRE_XML', 'NOMBRE', 'FOLIO', 'SERIE', 'FECHA',  'TOTAL', 'SUBTOTAL', 'REGIMEN_FISCAL', 'RFC',
+                    'IMPUESTOS', 'TIPO_COMPROBANTE', 'FORMA_PAGO', 'METODO_PAGO ', 'TRANSFERENCIA ',
+                    'CATEGORIA_FACTURA', 'NUMERO_CLIENTE', 'RECIBIO_DIVAR', 'NO.COTIZACION', 'CARPETA']
 
         for clave in claves:
-            if columna == clave[0]:
-                columna_sql = clave[1]
-                break
+            for cond in condiciones:
+                if cond[0] == clave[0]:
+                    cond[0] = clave[1]
 
-        if self._anio_actual == "0000":
-            self._consulta_actual = self._worm.consulta_sql(self._tabla_actual, columna_sql, criterio)
-        else:
-            self._consulta_actual = self._worm.consulta_sql(self._tabla_actual, columna_sql, criterio,
-                                                            self._anio_actual)
+        for cond in condiciones.copy():
+
+            if cond[0] == "CONCEPTO":
+                concept_flag = True
+                index_concept = condiciones.index(cond)
+                concept_criteria = cond[1]
+                condiciones.pop(index_concept)
+
+            if cond[0] == "FECHA":
+                date_flag = True
+                index_date = condiciones.index(cond)
+                date_criteria = cond[1]
+                condiciones.pop(index_date)
+
+        if date_flag is True and concept_flag is True:
+            if len(date_criteria) == 10:
+                date_criteria = (str(date_criteria[6:10]) + '-' + str(date_criteria[3:5]) + '-' +
+                                 str(date_criteria[0:2]))
+
+        if concept_flag:
+            if not isinstance(date_criteria, list):
+                condiciones.append(["FECHA", date_criteria])
+
+            if self._tabla_actual == "FACTURAS":
+                consulta_tab = self._worm.consulta_sql_concepto("FACTURAS", "CONCEPTOS", concept_criteria)
+            else:
+                consulta_tab = self._worm.consulta_sql_concepto("FACTURAS_NUEVAS", "CONCEPTOS_NUEVOS", concept_criteria)
+
+        elif date_flag:
+            if self._tabla_actual == "FACTURAS":
+                consulta_tab = self._worm.consulta_sql_rango_fecha("FACTURAS", date_criteria, self._anio_actual)
+
+            else:
+                consulta_tab = self._worm.consulta_sql_rango_fecha("FACTURAS_NUEVAS", date_criteria, self._anio_actual)
+
+        if condiciones:
+            if date_flag or concept_flag:
+                consulta_tab = self._worm.consulta_panda(consulta_tab, columnas, condiciones)
+            else:
+                if self._anio_actual == "0000":
+                    consulta_tab = self._worm.consulta_sql(self._tabla_actual, condiciones)
+                    # print(self._consulta_actual)
+                else:
+                    consulta_tab = self._worm.consulta_sql(self._tabla_actual, condiciones, self._anio_actual)
+        self._consulta_actual = consulta_tab
         self.tabular()
 
+    # Encargado de identificar el objeto sobre el cual se posiciona el cursor; es usado para identificar los registros
+    # en el TView.
     @ staticmethod
     def on_mouse_hover(event, tree):
         item = tree.identify_row(event.y)
         tree.selection_set(item)
 
+    # Muestra el menú contextual de un registro del TView al hacer clic derecho en él (conceptos de factura).
     def show_context_menu_concept(self, event, tree):
         # Obtener el item en el cual se hizo click derecho
         item_id = tree.identify('item', event.x, event.y)
@@ -305,6 +466,7 @@ class VPrincipal:
                            command=lambda: self.pop_editar_concepto(tree.item(item_id, 'text'), item_values[-1]))
         c_menu.post(event.x_root, event.y_root)
 
+    # Muestra el menú contextual de un registro del TView al hacer clic derecho en él (factura).
     def show_context_menu(self, event, tree):
         # Obtener el item en el cual se hizo click derecho
         item_id = tree.identify('item', event.x, event.y)
@@ -321,6 +483,7 @@ class VPrincipal:
                            command=lambda: self.pop_concepto(tree.item(item_id, 'text')))
         c_menu.post(event.x_root, event.y_root)
 
+    # Encargado de gestionar los botones que muestran/ocultan campos del TView de facturas.
     def actualizar_bottones(self):
 
         # Eliminar los widgets anteriores dentro del frame de botones
@@ -365,17 +528,20 @@ class VPrincipal:
             button.place(x=columna[3][0], y=columna[3][1])
             # button.pack(side='left')
 
+    # Llamado para ocultar un campo del TView de facturas.
     def ocultar_campo(self, campo):
         self._columnas_ocultas.append(campo)
         # print(self._columnas_ocultas)
         self.actualizar_bottones()
         self.tabular()
 
+    # Llamado para mostrar un campo del TView de facturas.
     def mostrar_campo(self, campo):
         self._columnas_ocultas.pop(self._columnas_ocultas.index(campo))
         self.actualizar_bottones()
         self.tabular()
 
+    # Encargado de actualizar la tabla de facturas de acuerdo con el año seleccionado.
     def act_anios(self, anio, tabla):
         self._consulta_actual = self._worm.consulta_sql_por_anio(anio, tabla)
         self._anio_actual = str(anio)
@@ -383,12 +549,14 @@ class VPrincipal:
         self._anio_tabla.place(relx=0.5, y=25, anchor='center')
         self.tabular()
 
+    # Encargado de actualizar la tabla de facturas aun estado predeterminado.
     def act_gen(self, tabla):
         self._consulta_actual = self._worm.consulta_sql_completa(tabla)
         self._anio_actual = "0000"
         self._anio_tabla.place_forget()
         self.tabular()
 
+    # Encargado de actualizar los botones de los años disponibles.
     def actualizar_anios(self):
 
         for widget in self.inner_frame.winfo_children():
@@ -407,9 +575,21 @@ class VPrincipal:
                                command=lambda an=anio: self.act_anios(an, self._tabla_actual))
             button.pack(pady=5, padx=1, anchor="center")
 
+            frame_anual = tk.Frame(self.inner_frame, bg='#387AB2', width=175, height=340)
+
+            for mes in ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre",
+                        "Octubre", "Noviembre", "Diciembre"]:
+
+                button = tk.Button(frame_anual, text=mes, width=18, height=1, font=("Comic Sans MS", 10, "bold"),
+                                   fg='#387AB2', relief=tk.RAISED)
+                button.pack(pady=5, padx=1, anchor="center")
+
+            self._anios_frames[anio] = frame_anual
+
         self.canvas.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
+    # Es la ventana pop que muestra los conceptos de la factura.
     def pop_concepto(self, value):
 
         if self._tabla_actual == "FACTURAS":
@@ -448,8 +628,6 @@ class VPrincipal:
         headers = [["C_CLAVE_PRO/SER", 100], ["C_DESCRIPCION", 250], ["C_CANTIDAD", 80], ["C_VALOR_U.", 100],
                    ["C_CON_CLIENTE", 200]]
 
-        # AQUÍ ME QUEDE....................................................
-
         tree = ttk.Treeview(inner_frame, height=7, columns=[header[0] for header in headers])
 
         tree.heading("#0", text="ID", anchor="w")
@@ -479,7 +657,62 @@ class VPrincipal:
 
         pop.mainloop()
 
+    # Pop que solicita una contraseña antes de acceder a una sección del programa (pop).
+    def authenticate(self):
+
+        pop_pass = tk.Toplevel()
+        self._top_levels_activos.append(pop_pass)
+        pop_pass.title("AUTENTICACIÓN")
+        pop_pass.geometry("290x130")
+        pop_pass.resizable(False, False)
+
+        variable = tk.StringVar()
+        condicion = False
+        contador = 0
+
+        label_cont = tk.Label(pop_pass, text="", fg='red', font=("Comic Sans MS", 10))
+        label_cont.place(x=20, y=65)
+
+        label_head = tk.Label(pop_pass, text="CONTRASEÑA", fg='#387AB2', font=("Comic Sans MS", 15))
+        label_head.place(relx=0.5, y=20, anchor="center")
+
+        campo_busqueda = AutocompleteCombobox(pop_pass, width=24, textvariable=variable, font=('Comic Sans MS', 12),
+                                              show='*')
+        campo_busqueda.place(x=20, y=40)
+
+        def authentication():
+            nonlocal pop_pass
+            nonlocal condicion
+            nonlocal contador
+            nonlocal label_cont
+            hash_obj = hashlib.sha256(variable.get().encode())
+            condicion = self._worm.authenticate(hash_obj.hexdigest())
+            if condicion is True:
+                pop_pass.destroy()
+            else:
+                contador = contador + 1
+                if contador >= 3:
+                    pop_pass.destroy()
+                else:
+                    label_cont.configure(text="Intento {0} de 3".format(contador))
+
+        button_aceptar = tk.Button(pop_pass, text="ACEPTAR",
+                                   command=authentication,
+                                   width=15, height=1, font=("Comic Sans MS", 10, "bold"),
+                                   fg='#208000', relief=tk.RAISED)
+        button_aceptar.place(x=80, y=100, anchor="center")
+
+        button_cancelar = tk.Button(pop_pass, text="CANCELAR", command=self.act_regresar_uno, width=15,
+                                    height=1, font=("Comic Sans MS", 10, "bold"), fg='#A21B00', relief=tk.RAISED)
+        button_cancelar.place(x=215, y=100, anchor="center")
+        pop_pass.wait_window()
+        return condicion
+
+    # Pop que sirve para editar un concepto de una factura.
     def pop_editar_concepto(self, value, c_cliente):
+
+        if not self.authenticate():
+            return
 
         entradas = []
         variables = []
@@ -529,7 +762,11 @@ class VPrincipal:
 
         pop.mainloop()
 
+    # Pop que sirve para editar un registro (factura).
     def pop_editar_registro(self, value, c_transferencia, c_cliente, c_divar, c_categoria, c_no_cotizacion, c_carpeta):
+
+        if not self.authenticate():
+            return
 
         entradas = []
         variables = []
@@ -594,6 +831,7 @@ class VPrincipal:
 
         pop.mainloop()
 
+    # Pop que sirve para indicar que una modificacion a los registros ha sido exitosa; se cierra automaticamente.
     def pop_modificaion_exitosa(self):
         pop = tk.Toplevel()
         self._top_levels_activos.append(pop)
@@ -608,6 +846,7 @@ class VPrincipal:
         # pop.after(2000, pop.destroy)
         pop.after(2000, self.act_regresar)
 
+    # Pop que sirve para indicar que una modificacion a los conceptos ha sido exitosa; se cierra automaticamente.
     def pop_modificaion_exitosa_conceptos(self):
         pop = tk.Toplevel()
         # self._top_levels_activos.append(pop)
@@ -625,22 +864,28 @@ class VPrincipal:
         self._top_levels_activos = list()
         self.pop_concepto(self._factura_actual)
 
+    # Destruye todos los pop activos
     def act_regresar(self):
         for pop_up in self._top_levels_activos:
             pop_up.destroy()
+            del pop_up
 
+    # Destruye el ultimo pop activo (en ultimo en pila; el del tope)
     def act_regresar_uno(self):
         self._top_levels_activos[-1].destroy()
 
+    # Hace una consulta y tabula las facturas a las cuales les falta uno de los tres campos añadidos por la empresa.
     def act_mostrar_faltantes(self):
         # print(self._anio_actual)
         self._consulta_actual = self._worm.consulta_sql_faltantes(self._tabla_actual, self._anio_actual)
         self.tabular()
 
+    # Hace una consulta y tabula las facturas que no se han pagado.
     def act_mostrar_no_pagadas(self):
         self._consulta_actual = self._worm.consulta_sql_no_pagadas(self._tabla_actual, self._anio_actual)
         self.tabular()
 
+    # Da de alta un registro (factura).
     def act_aceptar_er(self, trans, numero_cliente, r_divar, categoria, n_cot, carpeta, nombre_xml):
 
         self._worm.agregar_a_reg_tab_simple("CLIENTES", numero_cliente.upper())
@@ -652,6 +897,7 @@ class VPrincipal:
         self._consulta_actual = self._worm.consulta_sql_completa(self._tabla_actual)
         self.tabular()
 
+    # Asociado a la modificación de conceptos; agrega un cliente si es necesario.
     def act_aceptar_ec(self, cliente, identificador):
 
         self._worm.agregar_a_reg_tab_simple("CLIENTES", cliente.upper())
@@ -660,6 +906,7 @@ class VPrincipal:
         # self._consulta_actual = self._worm.consulta_sql_completa(self._tabla_actual)
         # self.tabular()
 
+    # Mueve las facturas de la tabla temporal a la tabla index de facturas.
     def mov_reg_to_index(self):
         self._worm.consulta_sql_mover_registros_index()
         self._worm.clasificar_facturas_archivos("Facturas Descargadas", "Facturas Clasificadas")
@@ -668,6 +915,7 @@ class VPrincipal:
         self.tabular()
         self.actualizar_anios()
 
+    # Se encarga de hacer la exoprtación a archivo Excel.
     def exportar_excel(self):
 
         dicc = {"C_XML": "NOMBRE_XML", "C_PROVEEDOR": "NOMBRE", "C_FOLIO": "FOLIO", "C_SERIE": "SERIE",
@@ -681,7 +929,7 @@ class VPrincipal:
             columnas = list()
             for columna in self._columnas_ocultas:
                 columnas.append(dicc[columna])
-            print("C_OCULTAS: ", columnas)
+            # print("C_OCULTAS: ", columnas)
             self._worm.exportar_xlsx(self._consulta_actual, self._columnas_actual, "facturas", columnas)
         else:
             self._worm.exportar_xlsx(self._consulta_actual, self._columnas_actual, "facturas")
@@ -699,9 +947,9 @@ class VPrincipal:
                 consulta_de_conceptos.append(tupla_c)
 
         columnas_con = ["ID", "NOMBRE XML", "CLAVE PROD/SERV", "DESCRIPCION", "CANTIDAD", "VALOR UNITARIO", "CLIENTE"]
-        print("CONCEPTOS: ", consulta_de_conceptos)
         self._worm.exportar_xlsx(consulta_de_conceptos, columnas_con, "conceptos_asociados")
 
+    # Usado para cerrar los widgets, cerrar la conexión con la base de datos y el programa.
     def abortar(self):
         for pop_up in self._top_levels_activos:
             pop_up.destroy()
