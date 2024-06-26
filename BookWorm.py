@@ -1,3 +1,9 @@
+"""
+El presente código “BookWorm.py” fue elaborado por el pasante de Ingeniería en Sistemas Computacionales (ISC)
+Juan Carlos Garcia Jimenez (juancarlosgarciajimenez123@gmail.com) para la empresa
+Distribución e Ingeniería VAR S.A. de C.V en los años 2023-2024.
+"""
+
 import os
 import shutil
 import xml.etree.ElementTree as Xml
@@ -11,11 +17,14 @@ class BookWorm:
 
     def __init__(self, ruta):
         self._conexion = sqlite3.connect(ruta)
-        # self._conexion_pg = conexion_pq
         self._cursor = self._conexion.cursor()
         self._ruta_origen = ""
         self._ruta = ruta
+        self._pword = "653510d0eddd9282ed16ce4f0ee9e906242f2c0a1bbc60985682e323bd346002"
 
+    # El método estático “convertir_mes” recibe como parámetro una cadena de dos caracteres
+    # simbolizando el mes numérico y retorna una cadena con la representación textual resumida
+    # de tres caracteres.
     @staticmethod
     def convertir_mes(mes_cadena):
 
@@ -28,6 +37,7 @@ class BookWorm:
 
         return "ERR"
 
+    # El método "crear_directorio" crea un directorio en la ruta especificada si no existe.
     @staticmethod
     def crear_directorio(ruta):
         if not os.path.exists(ruta):
@@ -36,6 +46,8 @@ class BookWorm:
         else:
             return ruta
 
+    # El método estático “listar_archivos” retorna un objeto tipo lista con el nombre de
+    # todos los archivos encontrados en un directorio dado (ruta).
     @staticmethod
     def listar_archivos(ruta):
         try:
@@ -58,6 +70,8 @@ class BookWorm:
         except Exception as e:
             print(f"Ocurrió un error: {e}")
 
+    # El método estático “descomprimir_zip” descomprime un archivo formato “.zip” de una
+    # ruta dada y vuelca sus archivos en un directorio destino dado.
     @staticmethod
     def descomprimir_zip(ruta_zip, directorio_destino):
 
@@ -65,7 +79,21 @@ class BookWorm:
             # Extraer todos los contenidos en el directorio de destino
             zip_ref.extractall(directorio_destino)
 
+    # El método “authenticate” compara una cadena de entrada “pwd” con una cadena atributo
+    # que funge como contraseña “_pword”; cabe mencionar que el atributo es la representación
+    # de la contraseña real, pues el atributo es en realidad el digesto de la contraseña generado
+    # con la función hash SHA256.
+    def authenticate(self, pwd):
+        return True if pwd == self._pword else False
+
+    # El método “crecon_db” genera la base de datos con las tablas necesarias para utilizar el programa; debido
+    # a que la creación de este programa se realizo previamente al diseño de la base de datos del servidor, será
+    # necesario hacer los ajustes necesarios para su incorporación al sistema final.
     def crecon_db(self):
+
+        # El siguiente código comentado fue implementado para la modificación de la base de datos
+        # ante un cambio de requerimientos durante el desarrollo; se mantiene para futuras
+        # modificaciones y/o correcciones.
 
         # self._cursor.execute('''ALTER TABLE CONCEPTOS_NUEVOS ADD COLUMN CLIENTE TEXT DEFAULT "DEF_CLE/C;"''')
         # self._cursor.execute('''ALTER TABLE CONCEPTOS ADD COLUMN CLIENTE TEXT DEFAULT "DEF_CLE/C;"''')
@@ -176,6 +204,8 @@ class BookWorm:
             );
         ''')
 
+    # El método “agregar_factura” hace INSERT de un registro a la tabla de FACTURAS o FACTURAS_NUEVAS; esto
+    # último depende del parámetro “tabla” proporcionado.
     def agregar_factura(self, nom_xml, nom, folio, serie, fecha, total, stotal, r_fis, rfc, impu, tipo_com,
                         forma_pago, metodo_pago, tabla):
         # Utiliza parámetros en la consulta para evitar SQL injection
@@ -201,6 +231,8 @@ class BookWorm:
 
         self._conexion.commit()
 
+    # El método “agregar_concepto” hace INSERT de un registro a la tabla de CONCEPTOS o CONCEPTOS_NUEVOS; esto
+    # último depende del parámetro “tabla” proporcionado.
     def agregar_concepto(self, nom_xml, clave, descripcion, cantidad, valor_uni, tabla):
         # Utiliza parámetros en la consulta para evitar SQL injection
         self._cursor.execute('''
@@ -214,6 +246,8 @@ class BookWorm:
             VALUES (?, ?, ?, ?, ?)
         '''.format(tabla), (nom_xml, clave, descripcion, cantidad, valor_uni))
 
+    # El método estático  “clasificar_factura_p”  a través de un archivo “.xml” verifica si la factura
+    # dada es del tipo “P” y retorna un diccionario con los datos de relevancia para la empresa.
     @staticmethod
     def clasificar_factura_p(root, nombre_archivo):
 
@@ -279,6 +313,8 @@ class BookWorm:
 
         return diccionario
 
+    # El método estático  “clasificar_factura_i_e”  a través de un archivo “.xml” verifica si la factura
+    # dada es del tipo “I” o "E" y retorna un diccionario con los datos de relevancia para la empresa.
     @staticmethod
     def clasificar_factura_i_e(root, nombre_archivo):
 
@@ -347,13 +383,17 @@ class BookWorm:
 
         return diccionario
 
+    # El método "get_column_desc" devuelve una lista que contiene el primer elemento de cada tupla
+    # en self._cursor.description.
     def get_column_desc(self):
         return [nombre[0] for nombre in self._cursor.description]
 
+    # El método “exportar_xlsx” genera un archivo .xlsx dada una tabla, si existe una lista de columnas
+    # no deseadas para la generación, estas son excluidas.
     def exportar_xlsx(self, tabla, columnas, nombre, columnas_excluidas=None):
 
         self.crear_directorio("xlsx")
-        print("C_DTF:", columnas)
+        # print("C_DTF:", columnas)
         data_frame = panda.DataFrame(tabla, columns=columnas)
         if columnas_excluidas is not None:
             data_frame = data_frame.drop(columnas_excluidas, axis=1)
@@ -397,11 +437,15 @@ class BookWorm:
                 resultado = self._cursor.fetchall()
                 return resultado
 
+    # El método “consulta_sql_concepto_por_xml”  hace una consulta de los conceptos asociados al nombre
+    # de un XML; básicamente recupera los conceptos asociados a una factura. NO ESTÁ PROTEGIDO CONTRA INYECCION SQL.
     def consulta_sql_concepto_por_xml(self, tabla_conceptos, criterio):
         consulta = '''SELECT * FROM {0} WHERE NOMBRE_XML = ? '''.format(tabla_conceptos)
         self._cursor.execute(consulta, (criterio,))
         return self._cursor.fetchall()
 
+    # El método “consulta_sql_concepto”  hace una consulta de los conceptos dado un criterio de busqueda; básicamente
+    # recupera las facturas que inciden con el criterio. NO ESTÁ PROTEGIDO CONTRA INYECCION SQL.
     def consulta_sql_concepto(self, tabla, tabla_conceptos, criterio):
 
         consulta = '''SELECT DISTINCT F.* 
@@ -410,6 +454,8 @@ class BookWorm:
         self._cursor.execute(consulta, ['%' + criterio + '%'])
         return self._cursor.fetchall()
 
+    # El método “consulta_sql_no_pagadas” consulta las facturas no pagadas tomándose como criterio la cadena
+    # por defecto “TRANN/A” para indicar que no ha sido pagada. ESTE MÉTODO NO ESTÁ PROTEGIDO CONTRA INYECCION SQL.
     def consulta_sql_no_pagadas(self, tabla, anio):
 
         if anio == "0000":
@@ -421,26 +467,83 @@ class BookWorm:
 
         return self._cursor.fetchall()
 
+    # El método “consulta_sql_por_campo” hace una consulta basica dando la tabla y el campo a consultar junto
+    # a un criterio de busqueda. ESTE MÉTODO NO ESTÁ PROTEGIDO CONTRA INYECCION SQL.
     def consulta_sql_por_campo(self, tabla, campo, criterio):
 
         consulta = "SELECT * FROM {0} WHERE {1} = ?".format(tabla, campo)
         self._cursor.execute(consulta, (criterio,))
         return self._cursor.fetchall()
 
-    def consulta_sql(self, tabla, columna, criterio, anio=None):
+    # El método “consulta_panda” hace una consulta sucesiva a un conjunto de datos (dados en formato de tabla
+    # indicando los datos "tabla" y las columnas que la forman "columnas") aplicandole consecutivamente una
+    # serie de filtros ("criteria") hasta obtener la tabla deseada; esta se da en forma de lista en un retorno.
+    def consulta_panda(self, tabla, columnas, criteria):
 
+        data_frame = panda.DataFrame(tabla, columns=columnas)
+        # Inicializar el DataFrame de resultados con el DataFrame original
+        resultado_consulta = data_frame
+
+        # Iterar sobre cada criterio en la lista de criterios
+        for crit in criteria:
+            columna = crit[0]  # Nombre de la columna
+            cadena_criterio = crit[1]  # Criterio de búsqueda
+
+            # Aplicar el filtro sobre el DataFrame acumulado de resultados
+
+            # Verificar si el criterio es un entero
+            print("CADENA_CRITERIO_EN_TUNRO: ", cadena_criterio, type(cadena_criterio))
+            if columna in ['TOTAL', 'SUBTOTAL']:
+                try:
+                    cadena_criterio = float(cadena_criterio)
+                    resultado_consulta = resultado_consulta[(resultado_consulta[columna] <= cadena_criterio*1.10) &
+                                                            (resultado_consulta[columna] >= cadena_criterio*0.90)]
+                except ValueError:
+                    print("omitiendo operacion")
+
+                # Aplicar filtro para igualdad numérica
+                # resultado_consulta = resultado_consulta[resultado_consulta[columna] == cadena_criterio]
+            else:
+                # Aplicar filtro para cadenas
+                resultado_consulta = resultado_consulta[
+                    resultado_consulta[columna].str.contains(cadena_criterio, case=False)]
+
+        # Eliminar duplicados del DataFrame de resultados (si es necesario)
+        resultado_consulta = resultado_consulta.drop_duplicates()
+        print("RESULTADO: ", list(resultado_consulta.to_records(index=False)))
+        return list(resultado_consulta.to_records(index=False))
+
+    def consulta_sql(self, tabla, condiciones, anio=None):
+
+        # Construir la parte del WHERE dinámicamente
+        where_clause = ""
+        for condicion in condiciones:
+            print("CONDICION BACK: ", condicion)
+            columna, criterio = condicion
+            if where_clause:
+                where_clause += " AND "
+            where_clause += f"{columna} LIKE '%{criterio}%'"
+
+        # Construir la consulta completa
         if anio is None:
-            self._cursor.execute("SELECT * FROM {0} WHERE {1} LIKE '%{2}%';".format(tabla, columna, criterio))
+            consulta = f"SELECT * FROM {tabla} WHERE {where_clause};"
         else:
-            # print("DEB:", anio)
-            self._cursor.execute('''SELECT * FROM {0} 
-            WHERE {1} LIKE '%{2}%' AND FECHA LIKE '%{3}%' ;'''.format(tabla, columna, criterio, anio))
+            consulta = f"SELECT * FROM {tabla} WHERE {where_clause} AND FECHA LIKE '%{anio}%';"
+
+        # Ejecutar la consulta
+        self._cursor.execute(consulta)
+
+        # Retornar los resultados
         return self._cursor.fetchall()
 
+    # El método “consulta_sql_completa" realiza una consulta SQL completa de una tabla dada. NO SE ENCUENTRA PROTEGIDA
+    # DE INYECCION SQL.
     def consulta_sql_completa(self, tabla):
         self._cursor.execute("SELECT * FROM {0};".format(tabla))
         return self._cursor.fetchall()
 
+    # El método “consulta_sql_faltantes" realiza una consulta SQL completa de una tabla dada. NO SE ENCUENTRA
+    # PROTEGIDA DE INYECCION SQL.
     def consulta_sql_faltantes(self, tabla, anio):
         if tabla == "FACTURAS":
             if anio == "0000":
@@ -476,6 +579,7 @@ class BookWorm:
                 '''.format(anio))
         return self._cursor.fetchall()
 
+    # El método “consulta_sql_actualizar_registro" realiza un UPDATE de los registros de las facturas.
     def consulta_sql_actualizar_registro(self, trans, numero_cliente, r_divar, categoria, no_cot, carpeta, nombre_xml,
                                          tabla):
         if tabla == "FACTURAS":
@@ -503,6 +607,7 @@ class BookWorm:
                                       r_divar.upper(), no_cot, carpeta, nombre_xml))
         self._conexion.commit()
 
+    # El método “consulta_sql_actualizar_concepto" realiza un UPDATE de los registros de los conceptos de una factura.
     def consulta_sql_actualizar_concepto(self, identificador, cliente, tabla):
         if tabla == "FACTURAS":
             update = '''UPDATE CONCEPTOS SET CLIENTE = ? WHERE ID = ?'''
@@ -512,6 +617,8 @@ class BookWorm:
         self._cursor.execute(update, (cliente.upper(), identificador))
         self._conexion.commit()
 
+    # El método “consulta_sql_mover_registros_index” transfiere los registros de las facturas de la tabla
+    # FACTURAS_NUEVAS a FACTURAS y sus respectivos conceptos de CONCEPTOS_NUEVOS a CONCEPTOS.
     def consulta_sql_mover_registros_index(self):
 
         self._cursor.execute("SELECT * FROM FACTURAS_NUEVAS")
@@ -544,6 +651,8 @@ class BookWorm:
         self._cursor.execute("DELETE FROM CONCEPTOS_NUEVOS")
         self._conexion.commit()
 
+    # El método “consulta_sql_obtener_anios” obtiene los años en los que se encuentran
+    # las facturas; es decir, retorna una lista con los años disponibles en las facturas.
     def consulta_sql_obtner_anios(self, tabla_actual):
 
         consulta = "SELECT DISTINCT strftime('%Y', FECHA) FROM {0}".format(tabla_actual)
@@ -554,22 +663,26 @@ class BookWorm:
         # Linea de visualizacion en consola
         return anios
 
+    # El método “consulta_sql_por_anio” hace una consulta SQL de una tabla con base en el
+    # año que se le proporcione.
     def consulta_sql_por_anio(self, anio, tabla_actual):
         consulta = "SELECT * FROM {0} WHERE strftime('%Y', FECHA) = '{1}'".format(tabla_actual, anio)
         self._cursor.execute(consulta)
         return self._cursor.fetchall()
 
+    '''
     def obtener_registos(self):
         return self._cursor.fetchall()
 
     def imprimir_consulta(self):
 
         rows = self._cursor.fetchall()
-        print(" ".join([description[0] for description in self._cursor.description]))
-
-        for row in rows:
-            print(" ".join(map(str, row)))
-
+        # print(" ".join([description[0] for description in self._cursor.description]))
+        
+        #for row in rows:
+        #    print(" ".join(map(str, row)))
+        
+    '''
     def agregar_a_reg_tab_simple(self, tabla, valor):
         if tabla == "CLIENTES":
             try:
@@ -582,6 +695,8 @@ class BookWorm:
             except sqlite3.IntegrityError as e:
                 print("CATEGORIA YA PRESENTE EN CATEGORIAS: ", e)
 
+    # El método “agregar_facturas_bd”  agrega las facturas en formato .xml de una ruta dada a la base de datos
+    # junto con sus conceptos asociados.
     def agregar_facturas_bd(self, ruta_origen, nombre_tabla_facturas, nombre_tabla_conceptos):
 
         # Se obtiene una lista de cadenas con los nombres de los archivos presentes en la ruta origen
@@ -627,6 +742,8 @@ class BookWorm:
                 os.remove(ruta_origen + '/' + archivo)
                 print("Error de acceso a la clave:", e)
 
+    # El método “clasificar_facturas_archivos”  organiza a nivel de archivos las facturas en formato .xml
+    # de una ruta origen en una ruta destino; la organización se hace en años mediante carpetas.
     def clasificar_facturas_archivos(self, ruta_origen, ruta_destino):
 
         # Se crea la carpeta destino en caso de no existir
@@ -667,5 +784,6 @@ class BookWorm:
                 print(f"Error al analizar XML KeyError: {e}")
                 print(archivo)
 
+    # El método "cerrar_conexion" cierra la conexion con la base de datos local
     def cerrar_conexion(self):
         self._conexion.close()
